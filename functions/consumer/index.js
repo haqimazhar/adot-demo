@@ -15,7 +15,8 @@ function toCsvLine(user) {
 }
 
 exports.handler = async (event) => {
-  const batchItemFailures = [];
+  const errors = [];
+  const processed = [];
   
   for (const record of event.Records) {
     try {
@@ -51,18 +52,31 @@ exports.handler = async (event) => {
       }
       
       console.log(`[Lambda] Successfully processed user: ${user.id}`);
+      processed.push(user.id);
     } catch (err) {
-      console.error(`[Lambda] Error processing record ${record.messageId}:`, err);
-      // Add failed message to batch failures - SQS will retry it
-      batchItemFailures.push({
-        itemIdentifier: record.messageId
+      console.error(`[Lambda] ❌ ERROR processing record ${record.messageId}:`, err);
+      errors.push({
+        messageId: record.messageId,
+        error: err.message,
+        stack: err.stack
       });
     }
   }
   
-  // Return batch item failures for SQS to retry
-  // Successfully processed messages will be deleted from queue
-  return { batchItemFailures };
+  // If ANY record failed, throw error to fail the Lambda
+  // This makes errors visible in AppSignals/CloudWatch
+  // SQS will retry the ENTIRE batch
+  if (errors.length > 0) {
+    console.error(`[Lambda] ❌ BATCH FAILED - ${errors.length} of ${event.Records.length} records failed`);
+    console.error('[Lambda] Failed records:', JSON.stringify(errors, null, 2));
+    throw new Error(`Batch processing failed: ${errors.length} records failed. First error: ${errors[0].error}`);
+  }
+  
+  console.log(`[Lambda] ✅ SUCCESS - All ${processed.length} records processed`);
+  return {
+    statusCode: 200,
+    body: JSON.stringify({ processed: processed.length })
+  };
 };
 
 
