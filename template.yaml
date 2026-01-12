@@ -461,6 +461,8 @@ Resources:
           Properties:
             Queue: !GetAtt UserQueue.Arn
             BatchSize: 10
+            FunctionResponseTypes:
+              - ReportBatchItemFailures
 
   ListUsersFunction:
     Type: AWS::Serverless::Function

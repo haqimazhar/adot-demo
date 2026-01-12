@@ -15,10 +15,15 @@ function toCsvLine(user) {
 }
 
 exports.handler = async (event) => {
-  const results = [];
+  const batchItemFailures = [];
+  
   for (const record of event.Records) {
     try {
       const user = JSON.parse(record.body);
+      
+      console.log(`[Lambda] Processing user: ${user.id}`);
+      
+      // Write to DynamoDB
       const put = new PutItemCommand({
         TableName: tableName,
         Item: {
@@ -29,7 +34,9 @@ exports.handler = async (event) => {
         }
       });
       await ddb.send(put);
+      console.log(`[Lambda] DynamoDB write success: ${user.id}`);
 
+      // Write to S3
       if (bucketName) {
         const csv = toCsvLine(user);
         const key = `users/${user.id}.csv`;
@@ -40,14 +47,22 @@ exports.handler = async (event) => {
           ContentType: 'text/csv'
         });
         await s3.send(putObj);
+        console.log(`[Lambda] S3 write success: ${key}`);
       }
-      results.push({ messageId: record.messageId, status: 'ok' });
+      
+      console.log(`[Lambda] Successfully processed user: ${user.id}`);
     } catch (err) {
-      console.error('Record failed:', record.messageId, err);
-      results.push({ messageId: record.messageId, status: 'failed', error: err.message });
+      console.error(`[Lambda] Error processing record ${record.messageId}:`, err);
+      // Add failed message to batch failures - SQS will retry it
+      batchItemFailures.push({
+        itemIdentifier: record.messageId
+      });
     }
   }
-  return { statusCode: 200, results };
+  
+  // Return batch item failures for SQS to retry
+  // Successfully processed messages will be deleted from queue
+  return { batchItemFailures };
 };
 
 
