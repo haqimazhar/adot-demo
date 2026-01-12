@@ -416,10 +416,10 @@ Resources:
           PolicyDocument:
             Version: 2012-10-17
             Statement:
-              - Effect: Allow
-                Action:
-                  - dynamodb:PutItem
-                Resource: !GetAtt UsersTable.Arn
+              # - Effect: Allow
+              #   Action:
+              #     - dynamodb:PutItem
+              #   Resource: !GetAtt UsersTable.Arn
               - Effect: Allow
                 Action:
                   - s3:PutObject
@@ -439,20 +439,20 @@ Resources:
   ConsumerFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: adot-demo-consumer
+      FunctionName: lambda-adot-demo-consumer
       Runtime: nodejs20.x
       Timeout: 60
       Role: !GetAtt LambdaRole.Arn
       Tracing: Active
       Layers:
-        - !Sub "arn:aws:lambda:${AWS::Region}:901920570463:layer:aws-otel-nodejs-amd64-ver-1-18-1:4"
+        - !Sub "arn:aws:lambda:ap-southeast-1:615299751070:layer:AWSOpenTelemetryDistroJs:11"
       Environment:
         Variables:
           TABLE_NAME: !Ref UsersTable
           S3_BUCKET: !Ref UsersBucket
-          AWS_LAMBDA_EXEC_WRAPPER: /opt/otel-handler
-          OTEL_SERVICE_NAME: adot-demo-consumer
-          OTEL_TRACES_SAMPLER: AlwaysOn
+          AWS_LAMBDA_EXEC_WRAPPER: /opt/otel-instrument
+          OTEL_TRACES_SAMPLER: traceidratio
+          OTEL_TRACES_SAMPLER_ARG: 1.0
       Handler: index.handler
       CodeUri: functions/consumer
       Events:
@@ -465,7 +465,7 @@ Resources:
   ListUsersFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: adot-demo-list-users
+      FunctionName: lambda-adot-demo-list-users
       Runtime: nodejs20.x
       Timeout: 30
       Role: !GetAtt ListUsersLambdaRole.Arn
