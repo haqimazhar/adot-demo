@@ -1,0 +1,68 @@
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+  awsxray:
+    endpoint: 0.0.0.0:2000
+    transport: udp
+
+  statsd:
+    endpoint: 0.0.0.0:8125
+    aggregation_interval: 60s
+
+processors:
+  tail_sampling:
+    decision_wait: 10s
+    num_traces: 50000
+    expected_new_traces_per_sec: 2000
+    policies:
+      - name: errors
+        type: status_code
+        status_code:
+          status_codes: [ERROR]
+
+      - name: slow-traces
+        type: latency
+        latency:
+          threshold_ms: 1000
+
+      - name: probabilistic
+        type: probabilistic
+        probabilistic:
+          sampling_percentage: 25
+
+  batch/traces:
+    timeout: 1s
+    send_batch_size: 50
+
+  batch/metrics:
+    timeout: 60s
+
+exporters:
+  awsxray:
+  debug:
+  awsemf:
+    namespace: ECS/AWSOTel/Application
+    log_group_name: '/aws/ecs/application/metrics'
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp, awsxray]
+      processors: [tail_sampling, batch/traces]
+      exporters: [awsxray]
+
+    metrics:
+      receivers: [otlp, statsd]
+      processors: [batch/metrics]
+      exporters: [awsemf]
+
+  extensions: [health_check]
