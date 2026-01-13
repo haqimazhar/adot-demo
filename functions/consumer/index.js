@@ -15,10 +15,16 @@ function toCsvLine(user) {
 }
 
 exports.handler = async (event) => {
-  const results = [];
+  const errors = [];
+  const processed = [];
+  
   for (const record of event.Records) {
     try {
       const user = JSON.parse(record.body);
+      
+      console.log(`[Lambda] Processing user: ${user.id}`);
+      
+      // Write to DynamoDB
       const put = new PutItemCommand({
         TableName: tableName,
         Item: {
@@ -29,7 +35,9 @@ exports.handler = async (event) => {
         }
       });
       await ddb.send(put);
+      console.log(`[Lambda] DynamoDB write success: ${user.id}`);
 
+      // Write to S3
       if (bucketName) {
         const csv = toCsvLine(user);
         const key = `users/${user.id}.csv`;
@@ -40,14 +48,35 @@ exports.handler = async (event) => {
           ContentType: 'text/csv'
         });
         await s3.send(putObj);
+        console.log(`[Lambda] S3 write success: ${key}`);
       }
-      results.push({ messageId: record.messageId, status: 'ok' });
+      
+      console.log(`[Lambda] Successfully processed user: ${user.id}`);
+      processed.push(user.id);
     } catch (err) {
-      console.error('Record failed:', record.messageId, err);
-      results.push({ messageId: record.messageId, status: 'failed', error: err.message });
+      console.error(`[Lambda] ❌ ERROR processing record ${record.messageId}:`, err);
+      errors.push({
+        messageId: record.messageId,
+        error: err.message,
+        stack: err.stack
+      });
     }
   }
-  return { statusCode: 200, results };
+  
+  // If ANY record failed, throw error to fail the Lambda
+  // This makes errors visible in AppSignals/CloudWatch
+  // SQS will retry the ENTIRE batch
+  if (errors.length > 0) {
+    console.error(`[Lambda] ❌ BATCH FAILED - ${errors.length} of ${event.Records.length} records failed`);
+    console.error('[Lambda] Failed records:', JSON.stringify(errors, null, 2));
+    throw new Error(`Batch processing failed: ${errors.length} records failed. First error: ${errors[0].error}`);
+  }
+  
+  console.log(`[Lambda] ✅ SUCCESS - All ${processed.length} records processed`);
+  return {
+    statusCode: 200,
+    body: JSON.stringify({ processed: processed.length })
+  };
 };
 
 
